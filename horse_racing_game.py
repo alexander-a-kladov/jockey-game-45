@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 # =========================================================
-# HORSE RACE WITH OBSTACLES + SOUND
+# HORSE RACE WITH OBSTACLES + SOUND + DEBUG
 #
 # pip install pygame moviepy imageio imageio-ffmpeg
 # =========================================================
@@ -42,6 +42,12 @@ STUN_TIME = 1.0
 MAX_COLLISIONS = 3
 
 # =========================================================
+# DEBUG
+# =========================================================
+SHOW_COLLISION_BOXES = True
+Y_COLLISION_UP = 30
+
+# =========================================================
 # ИНИЦИАЛИЗАЦИЯ
 # =========================================================
 pygame.init()
@@ -70,6 +76,7 @@ frame_h = sheet_h // ROWS
 
 frames = []
 
+# справа налево, сверху вниз
 for row in range(ROWS):
 
     for col in reversed(range(COLS)):
@@ -94,7 +101,7 @@ for row in range(ROWS):
         frames.append(frame)
 
 # =========================================================
-# ОФФСЕТЫ КОПЫТ
+# СМЕЩЕНИЕ КОПЫТ
 # =========================================================
 ground_offsets = [
     20, 16, 10, 8,
@@ -141,7 +148,8 @@ for i in range(OBSTACLE_COUNT):
     obstacles.append({
         "x_m": current_pos,
         "height": obstacle_height,
-        "width": obstacle_width
+        "width": obstacle_width,
+        "passed": False
     })
 
 # =========================================================
@@ -180,7 +188,7 @@ game_state = STATE_START_VIDEO
 best_time = None
 
 # =========================================================
-# ПЕРЕМЕННЫЕ
+# ИГРОВЫЕ ПЕРЕМЕННЫЕ
 # =========================================================
 horse_x = 0
 horse_y = 0
@@ -252,6 +260,10 @@ def reset_game():
 
     gallop_sound.set_volume(0)
 
+    # сброс препятствий
+    for obstacle in obstacles:
+        obstacle["passed"] = False
+
     game_state = STATE_START_VIDEO
 
 
@@ -277,11 +289,25 @@ def get_horse_rect():
         + horse_y
     )
 
+    rect_x = draw_x + 40
+
+    # =====================================================
+    # ПОДНЯТИЕ COLLISION BOX
+    # =====================================================
+    rect_y = draw_y + 40 - Y_COLLISION_UP
+
+    rect_w = current_frame.get_width() - 80
+
+    rect_h = (
+        current_frame.get_height()
+        - 40
+    )
+
     return pygame.Rect(
-        draw_x + 40,
-        draw_y + 40,
-        current_frame.get_width() - 80,
-        current_frame.get_height() - 40
+        rect_x,
+        rect_y,
+        rect_w,
+        rect_h
     )
 
 
@@ -339,6 +365,23 @@ def draw_world():
                 (screen_x, y)
             )
 
+            # DEBUG RECT
+            if SHOW_COLLISION_BOXES:
+
+                debug_rect = pygame.Rect(
+                    screen_x,
+                    y,
+                    w,
+                    h
+                )
+
+                pygame.draw.rect(
+                    screen,
+                    (255, 0, 0),
+                    debug_rect,
+                    2
+                )
+
     # =====================================================
     # ФИНИШ
     # =====================================================
@@ -391,6 +434,18 @@ def draw_world():
     )
 
     screen.blit(current_frame, (draw_x, draw_y))
+
+    # DEBUG RECT ЛОШАДИ
+    if SHOW_COLLISION_BOXES:
+
+        horse_debug_rect = get_horse_rect()
+
+        pygame.draw.rect(
+            screen,
+            (0, 255, 0),
+            horse_debug_rect,
+            2
+        )
 
     # =====================================================
     # UI
@@ -636,6 +691,10 @@ while running:
 
         for obstacle in obstacles:
 
+            # уже пройдено
+            if obstacle["passed"]:
+                continue
+
             world_x = obstacle["x_m"] * 100
 
             screen_x = world_x - camera_x
@@ -649,27 +708,24 @@ while running:
 
             if horse_rect.colliderect(rect):
 
-                # =========================================
-                # НАСКОЛЬКО ЛОШАДЬ ПЕРЕЛЕТЕЛА ПРЕПЯТСТВИЕ
-                # =========================================
                 obstacle_center = world_x + obstacle["width"] / 2
 
-                horse_front_world = horse_x + horse_rect.width
+                horse_front_world = (
+                    horse_x + horse_rect.width
+                )
 
                 # =========================================
-                # ЕСЛИ БОЛЬШЕ ПОЛОВИНЫ —
-                # ТОЛЬКО ПОТЕРЯ СКОРОСТИ
+                # ПЕРЕЛЕТЕЛА БОЛЬШЕ ПОЛОВИНЫ
                 # =========================================
                 if horse_front_world > obstacle_center:
 
                     ouch_sound.play()
 
+                    # минус 25% скорости
                     speed *= 0.75
 
-                    # чтобы повторно не сталкиваться
-                    horse_x += obstacle["width"] * 0.6
-
-                    distance_m = horse_x / 100
+                    # препятствие больше не проверяется
+                    obstacle["passed"] = True
 
                 else:
 
@@ -684,8 +740,11 @@ while running:
 
                     collision_count += 1
 
-                    obstacle_end = world_x + obstacle["width"]
+                    obstacle_end = (
+                        world_x + obstacle["width"]
+                    )
 
+                    # перенос за препятствие
                     horse_x = obstacle_end + 120
 
                     distance_m = horse_x / 100
@@ -695,6 +754,8 @@ while running:
                     vertical_velocity = 0
 
                     frame_index = 10
+
+                    obstacle["passed"] = True
 
                     if collision_count >= MAX_COLLISIONS:
 
