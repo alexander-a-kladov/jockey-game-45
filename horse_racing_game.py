@@ -649,34 +649,58 @@ while running:
 
             if horse_rect.colliderect(rect):
 
-                ouch_sound.play()
+                # =========================================
+                # НАСКОЛЬКО ЛОШАДЬ ПЕРЕЛЕТЕЛА ПРЕПЯТСТВИЕ
+                # =========================================
+                obstacle_center = world_x + obstacle["width"] / 2
 
-                stun_timer = STUN_TIME
-
-                speed = 0
-
-                collision_count += 1
+                horse_front_world = horse_x + horse_rect.width
 
                 # =========================================
-                # ПЕРЕМЕЩЕНИЕ ЗА ПРЕПЯТСТВИЕ
+                # ЕСЛИ БОЛЬШЕ ПОЛОВИНЫ —
+                # ТОЛЬКО ПОТЕРЯ СКОРОСТИ
                 # =========================================
-                obstacle_end = world_x + obstacle["width"]
+                if horse_front_world > obstacle_center:
 
-                horse_x = obstacle_end + 120
+                    ouch_sound.play()
 
-                distance_m = horse_x / 100
+                    speed *= 0.75
 
-                is_jumping = False
-                horse_y = 0
-                vertical_velocity = 0
+                    # чтобы повторно не сталкиваться
+                    horse_x += obstacle["width"] * 0.6
 
-                frame_index = 10
+                    distance_m = horse_x / 100
 
-                if collision_count >= MAX_COLLISIONS:
+                else:
 
-                    gallop_sound.set_volume(0)
+                    # =====================================
+                    # ПОЛНОЕ СТОЛКНОВЕНИЕ
+                    # =====================================
+                    ouch_sound.play()
 
-                    game_state = STATE_FAILED
+                    stun_timer = STUN_TIME
+
+                    speed = 0
+
+                    collision_count += 1
+
+                    obstacle_end = world_x + obstacle["width"]
+
+                    horse_x = obstacle_end + 120
+
+                    distance_m = horse_x / 100
+
+                    is_jumping = False
+                    horse_y = 0
+                    vertical_velocity = 0
+
+                    frame_index = 10
+
+                    if collision_count >= MAX_COLLISIONS:
+
+                        gallop_sound.set_volume(0)
+
+                        game_state = STATE_FAILED
 
                 break
 
