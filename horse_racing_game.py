@@ -1,17 +1,14 @@
 #!/usr/bin/python3
 
 # =========================================================
-# HORSE RACE
+# HORSE RACE WITH OBSTACLES + SOUND
 #
 # pip install pygame moviepy imageio imageio-ffmpeg
-#
-# Для звука:
-# ffmpeg -i videos/trumpet.mp4 videos/trumpet.mp3
-# ffmpeg -i videos/congrats.mp4 videos/congrats.mp3
 # =========================================================
 
 import pygame
 import sys
+import random
 from moviepy import VideoFileClip
 
 # =========================================================
@@ -36,6 +33,14 @@ MIN_JUMP_SPEED = MAX_SPEED * 0.25
 
 FINISH_DISTANCE = 500
 
+OBSTACLE_COUNT = 30
+MIN_OBSTACLE_DISTANCE = 10
+
+MAX_JUMP_HEIGHT = 190
+
+STUN_TIME = 1.0
+MAX_COLLISIONS = 3
+
 # =========================================================
 # ИНИЦИАЛИЗАЦИЯ
 # =========================================================
@@ -51,7 +56,7 @@ font = pygame.font.SysFont("arial", 28)
 big_font = pygame.font.SysFont("arial", 64, bold=True)
 
 # =========================================================
-# ЗАГРУЗКА СПРАЙТОВ
+# ЛОШАДЬ
 # =========================================================
 sheet = pygame.image.load("horses.png").convert_alpha()
 
@@ -65,7 +70,6 @@ frame_h = sheet_h // ROWS
 
 frames = []
 
-# справа налево, сверху вниз
 for row in range(ROWS):
 
     for col in reversed(range(COLS)):
@@ -104,16 +108,59 @@ ground_offsets = [
 ]
 
 # =========================================================
+# ПРЕПЯТСТВИЯ
+# =========================================================
+haystack_image = pygame.image.load(
+    "images/haystack.png"
+).convert_alpha()
+
+obstacles = []
+
+current_pos = 25
+
+for i in range(OBSTACLE_COUNT):
+
+    current_pos += random.uniform(
+        MIN_OBSTACLE_DISTANCE,
+        22
+    )
+
+    if current_pos >= FINISH_DISTANCE - 15:
+        break
+
+    obstacle_height = random.randint(
+        int(MAX_JUMP_HEIGHT * 0.5),
+        int(MAX_JUMP_HEIGHT * 0.75)
+    )
+
+    obstacle_width = random.randint(
+        obstacle_height - 15,
+        obstacle_height + 15
+    )
+
+    obstacles.append({
+        "x_m": current_pos,
+        "height": obstacle_height,
+        "width": obstacle_width
+    })
+
+# =========================================================
 # ВИДЕО
 # =========================================================
 start_clip = VideoFileClip("videos/trumpet.mp4")
 finish_clip = VideoFileClip("videos/congrats.mp4")
 
 # =========================================================
-# ЗВУК
+# ЗВУКИ
 # =========================================================
 start_sound = pygame.mixer.Sound("videos/trumpet.mp3")
 finish_sound = pygame.mixer.Sound("videos/congrats.mp3")
+
+gallop_sound = pygame.mixer.Sound("sounds/gallop.mp3")
+ouch_sound = pygame.mixer.Sound("sounds/ouch.mp3")
+
+gallop_sound.play(-1)
+gallop_sound.set_volume(0)
 
 # =========================================================
 # СОСТОЯНИЯ
@@ -123,6 +170,7 @@ STATE_PLAYING = 1
 STATE_FINISHED_WAIT = 2
 STATE_FINISH_VIDEO = 3
 STATE_RESTART_WAIT = 4
+STATE_FAILED = 5
 
 game_state = STATE_START_VIDEO
 
@@ -132,7 +180,7 @@ game_state = STATE_START_VIDEO
 best_time = None
 
 # =========================================================
-# ИГРОВЫЕ ПЕРЕМЕННЫЕ
+# ПЕРЕМЕННЫЕ
 # =========================================================
 horse_x = 0
 horse_y = 0
@@ -151,9 +199,11 @@ animation_timer = 0
 finish_timer = 0
 video_timer = 0
 
-# флаги воспроизведения звука
 start_sound_played = False
 finish_sound_played = False
+
+collision_count = 0
+stun_timer = 0
 
 # =========================================================
 # ФУНКЦИИ
@@ -174,6 +224,8 @@ def reset_game():
     global game_state
     global start_sound_played
     global finish_sound_played
+    global collision_count
+    global stun_timer
 
     horse_x = 0
     horse_y = 0
@@ -192,8 +244,13 @@ def reset_game():
     finish_timer = 0
     video_timer = 0
 
+    collision_count = 0
+    stun_timer = 0
+
     start_sound_played = False
     finish_sound_played = False
+
+    gallop_sound.set_volume(0)
 
     game_state = STATE_START_VIDEO
 
@@ -206,6 +263,25 @@ def get_ground_y(frame_id):
         GROUND_Y
         - frame.get_height()
         + ground_offsets[frame_id]
+    )
+
+
+def get_horse_rect():
+
+    current_frame = frames[frame_index]
+
+    draw_x = 240
+
+    draw_y = (
+        get_ground_y(frame_index)
+        + horse_y
+    )
+
+    return pygame.Rect(
+        draw_x + 40,
+        draw_y + 40,
+        current_frame.get_width() - 80,
+        current_frame.get_height() - 40
     )
 
 
@@ -222,9 +298,9 @@ def draw_world():
         (0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y)
     )
 
-    # линии движения
     camera_x = horse_x - 240
 
+    # линии движения
     for i in range(-2, 25):
 
         x = (i * 140) - (camera_x % 140)
@@ -236,6 +312,32 @@ def draw_world():
             (x + 40, GROUND_Y + 40),
             3
         )
+
+    # =====================================================
+    # ПРЕПЯТСТВИЯ
+    # =====================================================
+    for obstacle in obstacles:
+
+        world_x = obstacle["x_m"] * 100
+
+        screen_x = world_x - camera_x
+
+        if -200 < screen_x < WIDTH + 200:
+
+            w = obstacle["width"]
+            h = obstacle["height"]
+
+            obstacle_img = pygame.transform.smoothscale(
+                haystack_image,
+                (w, h)
+            )
+
+            y = GROUND_Y - h
+
+            screen.blit(
+                obstacle_img,
+                (screen_x, y)
+            )
 
     # =====================================================
     # ФИНИШ
@@ -298,7 +400,8 @@ def draw_world():
     ui_lines = [
         f"Speed: {speed_kmh:.1f} km/h",
         f"Distance: {distance_m:.2f} / 500 m",
-        f"Time: {elapsed_time:.1f} s"
+        f"Time: {elapsed_time:.1f} s",
+        f"Collisions: {collision_count}/{MAX_COLLISIONS}"
     ]
 
     if best_time is not None:
@@ -313,14 +416,6 @@ def draw_world():
         screen.blit(txt, (20, y))
 
         y += 40
-
-    controls = font.render(
-        "RIGHT = accelerate   LEFT = brake   SPACE = jump",
-        True,
-        (20, 20, 20)
-    )
-
-    screen.blit(controls, (20, HEIGHT - 50))
 
 
 def play_video_frame(clip, timer, size):
@@ -379,13 +474,17 @@ while running:
             if (
                 not is_jumping
                 and speed >= MIN_JUMP_SPEED
+                and stun_timer <= 0
             ):
                 is_jumping = True
                 vertical_velocity = JUMP_FORCE
 
         # рестарт
         if (
-            game_state == STATE_RESTART_WAIT
+            (
+                game_state == STATE_RESTART_WAIT
+                or game_state == STATE_FAILED
+            )
             and event.type == pygame.KEYDOWN
             and event.key == pygame.K_SPACE
         ):
@@ -395,9 +494,11 @@ while running:
     keys = pygame.key.get_pressed()
 
     # =====================================================
-    # СТАРТОВОЕ ВИДЕО
+    # START VIDEO
     # =====================================================
     if game_state == STATE_START_VIDEO:
+
+        gallop_sound.set_volume(0)
 
         if not start_sound_played:
             start_sound.play()
@@ -413,20 +514,6 @@ while running:
             (250, 250)
         )
 
-        title = big_font.render(
-            "GET READY!",
-            True,
-            (255, 255, 255)
-        )
-
-        screen.blit(
-            title,
-            (
-                WIDTH // 2 - title.get_width() // 2,
-                120
-            )
-        )
-
         if video_timer >= start_clip.duration:
 
             video_timer = 0
@@ -439,27 +526,53 @@ while running:
 
         elapsed_time += dt
 
-        accelerating = False
+        # =================================================
+        # ГРОМКОСТЬ ТОПОТА
+        # =================================================
+        if stun_timer > 0:
+            gallop_volume = 0
+        else:
+            gallop_volume = speed / MAX_SPEED
 
-        if keys[pygame.K_RIGHT]:
-            speed += ACCELERATION * dt
-            accelerating = True
+        gallop_volume = max(0, min(gallop_volume, 1))
 
-        if keys[pygame.K_LEFT]:
-            speed -= BRAKE_FORCE * dt
+        gallop_sound.set_volume(gallop_volume)
 
-        if not accelerating:
-            if speed > 0:
-                speed -= FRICTION * dt
+        # =================================================
+        # STUN
+        # =================================================
+        if stun_timer > 0:
 
-        speed = max(0, min(speed, MAX_SPEED))
+            stun_timer -= dt
+            speed = 0
 
-        # движение
+        else:
+
+            accelerating = False
+
+            if keys[pygame.K_RIGHT]:
+                speed += ACCELERATION * dt
+                accelerating = True
+
+            if keys[pygame.K_LEFT]:
+                speed -= BRAKE_FORCE * dt
+
+            if not accelerating:
+                if speed > 0:
+                    speed -= FRICTION * dt
+
+            speed = max(0, min(speed, MAX_SPEED))
+
+        # =================================================
+        # ДВИЖЕНИЕ
+        # =================================================
         horse_x += speed * dt
 
-        distance_m += speed * dt / 100
+        distance_m = horse_x / 100
 
-        # прыжок
+        # =================================================
+        # ПРЫЖОК
+        # =================================================
         if is_jumping:
 
             vertical_velocity += GRAVITY * dt
@@ -473,7 +586,9 @@ while running:
 
                 frame_index = 1
 
-        # анимация
+        # =================================================
+        # АНИМАЦИЯ
+        # =================================================
         if is_jumping:
 
             animation_speed = 0.22
@@ -512,7 +627,62 @@ while running:
             else:
                 frame_index = 10
 
-        # финиш
+        # =================================================
+        # СТОЛКНОВЕНИЯ
+        # =================================================
+        horse_rect = get_horse_rect()
+
+        camera_x = horse_x - 240
+
+        for obstacle in obstacles:
+
+            world_x = obstacle["x_m"] * 100
+
+            screen_x = world_x - camera_x
+
+            rect = pygame.Rect(
+                screen_x,
+                GROUND_Y - obstacle["height"],
+                obstacle["width"],
+                obstacle["height"]
+            )
+
+            if horse_rect.colliderect(rect):
+
+                ouch_sound.play()
+
+                stun_timer = STUN_TIME
+
+                speed = 0
+
+                collision_count += 1
+
+                # =========================================
+                # ПЕРЕМЕЩЕНИЕ ЗА ПРЕПЯТСТВИЕ
+                # =========================================
+                obstacle_end = world_x + obstacle["width"]
+
+                horse_x = obstacle_end + 120
+
+                distance_m = horse_x / 100
+
+                is_jumping = False
+                horse_y = 0
+                vertical_velocity = 0
+
+                frame_index = 10
+
+                if collision_count >= MAX_COLLISIONS:
+
+                    gallop_sound.set_volume(0)
+
+                    game_state = STATE_FAILED
+
+                break
+
+        # =================================================
+        # ФИНИШ
+        # =================================================
         if distance_m >= FINISH_DISTANCE:
 
             game_state = STATE_FINISHED_WAIT
@@ -520,6 +690,8 @@ while running:
             finish_timer = 0
 
             speed = 0
+
+            gallop_sound.set_volume(0)
 
             if (
                 best_time is None
@@ -530,9 +702,11 @@ while running:
         draw_world()
 
     # =====================================================
-    # ОЖИДАНИЕ ПЕРЕД ФИНАЛОМ
+    # ПОБЕДА
     # =====================================================
     elif game_state == STATE_FINISHED_WAIT:
+
+        gallop_sound.set_volume(0)
 
         finish_timer += dt
 
@@ -564,9 +738,11 @@ while running:
             video_timer = 0
 
     # =====================================================
-    # ФИНАЛЬНОЕ ВИДЕО
+    # FINISH VIDEO
     # =====================================================
     elif game_state == STATE_FINISH_VIDEO:
+
+        gallop_sound.set_volume(0)
 
         if not finish_sound_played:
             finish_sound.play()
@@ -587,9 +763,11 @@ while running:
             game_state = STATE_RESTART_WAIT
 
     # =====================================================
-    # ОЖИДАНИЕ RESTART
+    # RESTART
     # =====================================================
     elif game_state == STATE_RESTART_WAIT:
+
+        gallop_sound.set_volume(0)
 
         draw_world()
 
@@ -607,6 +785,49 @@ while running:
 
         txt2 = font.render(
             "to restart race",
+            True,
+            (255, 255, 255)
+        )
+
+        screen.blit(
+            txt1,
+            (
+                WIDTH // 2 - txt1.get_width() // 2,
+                HEIGHT // 2 - 40
+            )
+        )
+
+        screen.blit(
+            txt2,
+            (
+                WIDTH // 2 - txt2.get_width() // 2,
+                HEIGHT // 2 + 40
+            )
+        )
+
+    # =====================================================
+    # ПРОИГРЫШ
+    # =====================================================
+    elif game_state == STATE_FAILED:
+
+        gallop_sound.set_volume(0)
+
+        draw_world()
+
+        overlay = pygame.Surface((WIDTH, HEIGHT))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+
+        screen.blit(overlay, (0, 0))
+
+        txt1 = big_font.render(
+            "FAILED TO REACH FINISH",
+            True,
+            (255, 100, 100)
+        )
+
+        txt2 = font.render(
+            "Press SPACE to restart",
             True,
             (255, 255, 255)
         )
