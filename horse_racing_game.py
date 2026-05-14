@@ -64,7 +64,7 @@ big_font = pygame.font.SysFont("arial", 64, bold=True)
 # =========================================================
 # ЛОШАДЬ
 # =========================================================
-sheet = pygame.image.load("horses.png").convert_alpha()
+sheet = pygame.image.load("images/horses.png").convert_alpha()
 
 sheet_w, sheet_h = sheet.get_size()
 
