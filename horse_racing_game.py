@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 # =========================================================
-# HORSE RACE WITH OBSTACLES + SOUND + DEBUG
+# HORSE RACE WITH OBSTACLES + FATIGUE + SOUND + VIDEO
 #
 # pip install pygame moviepy imageio imageio-ffmpeg
 # =========================================================
@@ -21,16 +21,30 @@ GROUND_Y = 580
 
 HORSE_SCALE = 0.55
 
-MAX_SPEED = 950
-ACCELERATION = 520
-FRICTION = 240
-BRAKE_FORCE = 950
+# =========================================================
+# СКОРОСТЬ
+# =========================================================
+MAX_SPEED_KMH = 85
+MAX_SPEED = MAX_SPEED_KMH / 0.12
 
+MIN_TIRED_SPEED_KMH = 30
+MIN_TIRED_SPEED = MIN_TIRED_SPEED_KMH / 0.12
+
+ACCELERATION = MAX_SPEED * 0.62
+FRICTION = MAX_SPEED * 0.05
+BRAKE_FORCE = MAX_SPEED * 1.0
+
+# =========================================================
+# ПРЫЖОК
+# =========================================================
 GRAVITY = 1700
 JUMP_FORCE = -760
 
 MIN_JUMP_SPEED = MAX_SPEED * 0.25
 
+# =========================================================
+# ГОНКА
+# =========================================================
 FINISH_DISTANCE = 500
 
 OBSTACLE_COUNT = 30
@@ -42,9 +56,21 @@ STUN_TIME = 1.0
 MAX_COLLISIONS = 3
 
 # =========================================================
+# УСТАЛОСТЬ
+# =========================================================
+fatigue = 0.0
+
+FATIGUE_GAIN = 0.0055
+FATIGUE_RECOVERY = 0.12
+
+# =========================================================
 # DEBUG
 # =========================================================
-SHOW_COLLISION_BOXES = True
+SHOW_COLLISION_BOXES = False
+
+# =========================================================
+# COLLISION
+# =========================================================
 Y_COLLISION_UP = 30
 
 # =========================================================
@@ -64,7 +90,9 @@ big_font = pygame.font.SysFont("arial", 64, bold=True)
 # =========================================================
 # ЛОШАДЬ
 # =========================================================
-sheet = pygame.image.load("images/horses.png").convert_alpha()
+sheet = pygame.image.load(
+    "images/horses.png"
+).convert_alpha()
 
 sheet_w, sheet_h = sheet.get_size()
 
@@ -101,7 +129,7 @@ for row in range(ROWS):
         frames.append(frame)
 
 # =========================================================
-# СМЕЩЕНИЕ КОПЫТ
+# СМЕЩЕНИЯ КОПЫТ
 # =========================================================
 ground_offsets = [
     20, 16, 10, 8,
@@ -155,17 +183,32 @@ for i in range(OBSTACLE_COUNT):
 # =========================================================
 # ВИДЕО
 # =========================================================
-start_clip = VideoFileClip("videos/trumpet.mp4")
-finish_clip = VideoFileClip("videos/congrats.mp4")
+start_clip = VideoFileClip(
+    "videos/trumpet.mp4"
+)
+
+finish_clip = VideoFileClip(
+    "videos/congrats.mp4"
+)
 
 # =========================================================
 # ЗВУКИ
 # =========================================================
-start_sound = pygame.mixer.Sound("videos/trumpet.mp3")
-finish_sound = pygame.mixer.Sound("videos/congrats.mp3")
+start_sound = pygame.mixer.Sound(
+    "videos/trumpet.mp3"
+)
 
-gallop_sound = pygame.mixer.Sound("sounds/gallop.mp3")
-ouch_sound = pygame.mixer.Sound("sounds/ouch.mp3")
+finish_sound = pygame.mixer.Sound(
+    "videos/congrats.mp3"
+)
+
+gallop_sound = pygame.mixer.Sound(
+    "sounds/gallop.mp3"
+)
+
+ouch_sound = pygame.mixer.Sound(
+    "sounds/ouch.mp3"
+)
 
 gallop_sound.play(-1)
 gallop_sound.set_volume(0)
@@ -234,6 +277,7 @@ def reset_game():
     global finish_sound_played
     global collision_count
     global stun_timer
+    global fatigue
 
     horse_x = 0
     horse_y = 0
@@ -255,12 +299,13 @@ def reset_game():
     collision_count = 0
     stun_timer = 0
 
+    fatigue = 0.0
+
     start_sound_played = False
     finish_sound_played = False
 
     gallop_sound.set_volume(0)
 
-    # сброс препятствий
     for obstacle in obstacles:
         obstacle["passed"] = False
 
@@ -289,12 +334,15 @@ def get_horse_rect():
         + horse_y
     )
 
+    # стоящая лошадь ниже
+    if speed < 1 and not is_jumping:
+        draw_y += 20
+
     rect_x = draw_x + 40
 
-    # =====================================================
-    # ПОДНЯТИЕ COLLISION BOX
-    # =====================================================
-    rect_y = draw_y + 40 - Y_COLLISION_UP
+    rect_y = (
+        draw_y + 40 - Y_COLLISION_UP
+    )
 
     rect_w = current_frame.get_width() - 80
 
@@ -433,9 +481,13 @@ def draw_world():
         + horse_y
     )
 
+    # стоящая лошадь ниже
+    if speed < 1 and not is_jumping:
+        draw_y += 20
+
     screen.blit(current_frame, (draw_x, draw_y))
 
-    # DEBUG RECT ЛОШАДИ
+    # DEBUG RECT
     if SHOW_COLLISION_BOXES:
 
         horse_debug_rect = get_horse_rect()
@@ -456,17 +508,24 @@ def draw_world():
         f"Speed: {speed_kmh:.1f} km/h",
         f"Distance: {distance_m:.2f} / 500 m",
         f"Time: {elapsed_time:.1f} s",
-        f"Collisions: {collision_count}/{MAX_COLLISIONS}"
+        f"Collisions: {collision_count}/{MAX_COLLISIONS}",
+        f"Fatigue: {fatigue * 100:.0f}%",
     ]
 
     if best_time is not None:
-        ui_lines.append(f"Best time: {best_time:.1f} s")
+        ui_lines.append(
+            f"Best time: {best_time:.1f} s"
+        )
 
     y = 20
 
     for line in ui_lines:
 
-        txt = font.render(line, True, (20, 20, 20))
+        txt = font.render(
+            line,
+            True,
+            (20, 20, 20)
+        )
 
         screen.blit(txt, (20, y))
 
@@ -565,7 +624,10 @@ while running:
 
         play_video_frame(
             start_clip,
-            min(video_timer, start_clip.duration - 0.01),
+            min(
+                video_timer,
+                start_clip.duration - 0.01
+            ),
             (250, 250)
         )
 
@@ -582,14 +644,51 @@ while running:
         elapsed_time += dt
 
         # =================================================
+        # УСТАЛОСТЬ
+        # =================================================
+        fatigue_speed_threshold = MAX_SPEED * 0.20
+
+        if speed > fatigue_speed_threshold:
+
+            fatigue += FATIGUE_GAIN * dt
+
+        else:
+
+            recovery_factor = (
+                1.0
+                - speed / fatigue_speed_threshold
+            )
+
+            fatigue -= (
+                FATIGUE_RECOVERY
+                * recovery_factor
+                * dt
+            )
+
+        fatigue = max(0.0, min(fatigue, 1.0))
+
+        current_max_speed = (
+            MAX_SPEED
+            - (
+                MAX_SPEED
+                - MIN_TIRED_SPEED
+            ) * fatigue
+        )
+
+        # =================================================
         # ГРОМКОСТЬ ТОПОТА
         # =================================================
         if stun_timer > 0:
             gallop_volume = 0
         else:
-            gallop_volume = speed / MAX_SPEED
+            gallop_volume = (
+                speed / current_max_speed
+            )
 
-        gallop_volume = max(0, min(gallop_volume, 1))
+        gallop_volume = max(
+            0,
+            min(gallop_volume, 1)
+        )
 
         gallop_sound.set_volume(gallop_volume)
 
@@ -606,17 +705,23 @@ while running:
             accelerating = False
 
             if keys[pygame.K_RIGHT]:
+
                 speed += ACCELERATION * dt
                 accelerating = True
 
             if keys[pygame.K_LEFT]:
+
                 speed -= BRAKE_FORCE * dt
 
             if not accelerating:
+
                 if speed > 0:
                     speed -= FRICTION * dt
 
-            speed = max(0, min(speed, MAX_SPEED))
+            speed = max(
+                0,
+                min(speed, current_max_speed)
+            )
 
         # =================================================
         # ДВИЖЕНИЕ
@@ -656,7 +761,7 @@ while running:
 
                 frame_index += 1
 
-                if frame_index >= 10:
+                if frame_index >= 12:
                     frame_index = 0
 
         else:
@@ -665,7 +770,10 @@ while running:
 
                 animation_speed = (
                     0.09
-                    - (speed / MAX_SPEED) * 0.05
+                    - (
+                        speed
+                        / current_max_speed
+                    ) * 0.05
                 )
 
                 animation_timer += dt
@@ -676,7 +784,7 @@ while running:
 
                     frame_index += 1
 
-                    if frame_index >= 10:
+                    if frame_index >= 12:
                         frame_index = 0
 
             else:
@@ -691,7 +799,6 @@ while running:
 
         for obstacle in obstacles:
 
-            # уже пройдено
             if obstacle["passed"]:
                 continue
 
@@ -708,7 +815,10 @@ while running:
 
             if horse_rect.colliderect(rect):
 
-                obstacle_center = world_x + obstacle["width"] / 2
+                obstacle_center = (
+                    world_x
+                    + obstacle["width"] / 2
+                )
 
                 horse_front_world = (
                     horse_x + horse_rect.width
@@ -721,10 +831,8 @@ while running:
 
                     ouch_sound.play()
 
-                    # минус 25% скорости
                     speed *= 0.75
 
-                    # препятствие больше не проверяется
                     obstacle["passed"] = True
 
                 else:
@@ -741,10 +849,10 @@ while running:
                     collision_count += 1
 
                     obstacle_end = (
-                        world_x + obstacle["width"]
+                        world_x
+                        + obstacle["width"]
                     )
 
-                    # перенос за препятствие
                     horse_x = obstacle_end + 120
 
                     distance_m = horse_x / 100
@@ -797,7 +905,10 @@ while running:
 
         draw_world()
 
-        overlay = pygame.Surface((WIDTH, HEIGHT))
+        overlay = pygame.Surface(
+            (WIDTH, HEIGHT)
+        )
+
         overlay.set_alpha(120)
         overlay.fill((0, 0, 0))
 
@@ -812,7 +923,8 @@ while running:
         screen.blit(
             txt,
             (
-                WIDTH // 2 - txt.get_width() // 2,
+                WIDTH // 2
+                - txt.get_width() // 2,
                 HEIGHT // 2 - 50
             )
         )
@@ -839,7 +951,10 @@ while running:
 
         play_video_frame(
             finish_clip,
-            min(video_timer, finish_clip.duration - 0.01),
+            min(
+                video_timer,
+                finish_clip.duration - 0.01
+            ),
             (400, 400)
         )
 
@@ -856,7 +971,10 @@ while running:
 
         draw_world()
 
-        overlay = pygame.Surface((WIDTH, HEIGHT))
+        overlay = pygame.Surface(
+            (WIDTH, HEIGHT)
+        )
+
         overlay.set_alpha(150)
         overlay.fill((0, 0, 0))
 
@@ -877,7 +995,8 @@ while running:
         screen.blit(
             txt1,
             (
-                WIDTH // 2 - txt1.get_width() // 2,
+                WIDTH // 2
+                - txt1.get_width() // 2,
                 HEIGHT // 2 - 40
             )
         )
@@ -885,7 +1004,8 @@ while running:
         screen.blit(
             txt2,
             (
-                WIDTH // 2 - txt2.get_width() // 2,
+                WIDTH // 2
+                - txt2.get_width() // 2,
                 HEIGHT // 2 + 40
             )
         )
@@ -899,7 +1019,10 @@ while running:
 
         draw_world()
 
-        overlay = pygame.Surface((WIDTH, HEIGHT))
+        overlay = pygame.Surface(
+            (WIDTH, HEIGHT)
+        )
+
         overlay.set_alpha(180)
         overlay.fill((0, 0, 0))
 
@@ -920,7 +1043,8 @@ while running:
         screen.blit(
             txt1,
             (
-                WIDTH // 2 - txt1.get_width() // 2,
+                WIDTH // 2
+                - txt1.get_width() // 2,
                 HEIGHT // 2 - 40
             )
         )
@@ -928,7 +1052,8 @@ while running:
         screen.blit(
             txt2,
             (
-                WIDTH // 2 - txt2.get_width() // 2,
+                WIDTH // 2
+                - txt2.get_width() // 2,
                 HEIGHT // 2 + 40
             )
         )
