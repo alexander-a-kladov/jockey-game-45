@@ -23,7 +23,7 @@
 <div id="wrapper">
   <canvas id="c" width="1280" height="600"></canvas>
   <div id="hint">
-    <span>→</span> УСКОРЕНИЕ &nbsp;|&nbsp; <span>←</span> ТОРМОЖЕНИЕ &nbsp;|&nbsp; <span>SPACE</span> ПРЫЖОК
+    <span>→</span> УСКОРЕНИЕ &nbsp;|&nbsp; <span>←</span> ТОРМОЖЕНИЕ &nbsp;|&nbsp; <span>SPACE</span> ПРЫЖОК<br><span>📱</span> МОБИЛЬНОЕ: ПРАВАЯ НИЖНЯЯ ЧАСТЬ — УСКОРЕНИЕ, ЛЕВАЯ НИЖНЯЯ — ТОРМОЖЕНИЕ, ПРАВАЯ ВЕРХНЯЯ — ПРЫЖОК
   </div>
 </div>
 <script src="images/horses.js"></script>
@@ -197,6 +197,59 @@ function resetGame() {
 
 // ── KEYS ───────────────────────────────────────────────────
 const keys = {};
+const touchControls = {
+  right:false,
+  left:false,
+  jump:false
+};
+
+function updateTouchControls(e) {
+  e.preventDefault();
+
+  touchControls.right = false;
+  touchControls.left = false;
+  touchControls.jump = false;
+
+  const rect = canvas.getBoundingClientRect();
+
+  for (const touch of e.touches) {
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+
+    if (y < rect.height * 0.45 && x > rect.width * 0.5) {
+      touchControls.jump = true;
+    } else if (y >= rect.height * 0.45 && x > rect.width * 0.5) {
+      touchControls.right = true;
+    } else if (y >= rect.height * 0.45 && x <= rect.width * 0.5) {
+      touchControls.left = true;
+    }
+  }
+
+  if (state === STATE.INTRO && touchControls.right) {
+    unlockAudio();
+    state = STATE.PLAYING;
+  }
+
+  if (
+    state === STATE.PLAYING &&
+    touchControls.jump &&
+    !isJumping &&
+    speed >= MIN_JUMP_SPEED &&
+    stunTimer <= 0
+  ) {
+    isJumping = true;
+    vertVel = JUMP_FORCE;
+  }
+
+  if ((state === STATE.WIN || state === STATE.FAILED) && e.touches.length > 0) {
+    resetGame();
+  }
+}
+
+canvas.addEventListener('touchstart', updateTouchControls, { passive:false });
+canvas.addEventListener('touchmove', updateTouchControls, { passive:false });
+canvas.addEventListener('touchend', updateTouchControls, { passive:false });
+canvas.addEventListener('touchcancel', updateTouchControls, { passive:false });
 document.addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
   unlockAudio();
@@ -437,8 +490,8 @@ function loop(ts) {
     else {
       let acc=false;
       if (!isJumping) {
-      if (keys['ArrowRight']||keys['KeyD']){ speed+=ACCELERATION*dt; acc=true; }
-      if (keys['ArrowLeft'] ||keys['KeyA'])  speed-=BRAKE_FORCE*dt;
+      if (keys['ArrowRight']||keys['KeyD']||touchControls.right){ speed+=ACCELERATION*dt; acc=true; }
+      if (keys['ArrowLeft'] ||keys['KeyA']||touchControls.left)  speed-=BRAKE_FORCE*dt;
       }
       if (!acc&&speed>0) speed-=FRICTION*dt;
       speed=Math.max(0,Math.min(speed,curMax));
@@ -548,9 +601,9 @@ function loop(ts) {
   if (state===STATE.INTRO) {
     overlay(0,0,0,.55);
     bigText('Скачки','#f5c842',H/2-55);
-    subText('Нажмите SPACE для старта',H/2+10);
+    subText('Нажмите SPACE или правую часть экрана для старта',H/2+10);
     ctx.font='13px Libre Baskerville'; ctx.textAlign='center'; ctx.fillStyle='#c8902a';
-    ctx.fillText('→ ускорение  |  ← торможение  |  SPACE прыжок',W/2,H/2+52);
+    ctx.fillText('→ ускорение | ← торможение | SPACE прыжок | 📱 правая нижняя — ускорение, левая нижняя — торможение, правая верхняя — прыжок',W/2,H/2+52);
     ctx.textAlign='left';
   }
 
