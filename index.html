@@ -10,32 +10,37 @@
   body {
     background:#1a0a00;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
-    min-height:100vh; height:100vh; font-family:'Libre Baskerville',serif; overflow:hidden;
+    height: 100vh; height: 100dvh;
+    font-family:'Libre Baskerville',serif; overflow:hidden;
     touch-action: none;
   }
   #wrapper {
     position:relative;
     width:1280px;
     max-width:100vw;
-    /* On mobile, also limit by height so canvas fits vertically */
-    max-height:100vh;
     display:flex; flex-direction:column; align-items:center;
+    max-height: 100vh; max-height: 100dvh;
   }
   canvas {
     display:block;
     width:100%;
-    /* Limit height so canvas never overflows viewport */
-    max-height:calc(100vh - 50px);
+    max-height: calc(100vh - 36px);
+    max-height: calc(100dvh - 36px);
     border:4px solid #8b5a00; border-radius:4px;
     box-shadow:0 0 60px #8b3a00aa,0 0 120px #3a1a0088;
     touch-action: none;
   }
-  #hint { margin-top:6px; text-align:center; color:#c8902a; font-family:'Rye',serif;
-          font-size:11px; letter-spacing:1px; text-shadow:0 0 8px #8b3a00;
-          /* Hide hint on very small screens to save vertical space */
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100vw;
-          padding:0 8px; }
-  @media (max-height: 500px) { #hint { display:none; } }
+  #hint {
+    margin-top:4px; text-align:center; color:#c8902a; font-family:'Rye',serif;
+    font-size:11px; letter-spacing:1px; text-shadow:0 0 8px #8b3a00;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100vw;
+    padding:0 8px; line-height:1.3;
+  }
+  @media (max-height: 480px) { #hint { display:none; } }
+  @media (orientation: landscape) and (max-height: 600px) {
+    canvas { max-height: 100vh; max-height: 100dvh; }
+    #hint  { display:none; }
+  }
   #hint span { color:#f5c842; }
 </style>
 </head>
@@ -126,28 +131,36 @@ const planeAudio  = new Audio(PLANES_SRC);
 planeAudio.loop   = true;
 
 let audioUnlocked = false;
-// Shared AudioContext for mobile unlock
-let audioCtx = null;
-function getAudioContext() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  return audioCtx;
-}
+let _audioCtx = null;
 
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  // Resume AudioContext (required on iOS/Android)
-  const ctx2 = getAudioContext();
-  if (ctx2.state === 'suspended') {
-    ctx2.resume();
-  }
-  // Play-and-pause trick to pre-warm audio elements
+
+  // Create/resume shared AudioContext
+  _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Connect each Audio element to the AudioContext so iOS actually plays them.
+  // createMediaElementSource ties the HTMLAudioElement into the Web Audio graph.
   [gallopAudio, planeAudio, ouchAudio].forEach(a => {
-    a.load();
+    try {
+      const src = _audioCtx.createMediaElementSource(a);
+      src.connect(_audioCtx.destination);
+    } catch(e) {
+      // Already connected or not supported — ignore
+    }
+  });
+
+  if (_audioCtx.state === 'suspended') {
+    _audioCtx.resume();
+  }
+
+  // Trigger a silent play so the browser registers user-gesture permission
+  [gallopAudio, planeAudio, ouchAudio].forEach(a => {
+    a.volume = 0;
     const p = a.play();
-    if (p) p.then(() => a.pause()).catch(() => {});
+    if (p) p.then(() => { a.pause(); a.currentTime = 0; a.volume = 1; }).catch(() => {});
+    else { a.pause(); a.currentTime = 0; a.volume = 1; }
   });
 }
 
