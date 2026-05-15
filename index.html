@@ -125,43 +125,66 @@ planeImg.src = PLANE_SRC;
 
 // ── AUDIO ──────────────────────────────────────────────────
 const gallopAudio = new Audio(GALLOP_SRC);
-gallopAudio.loop  = true;
-const ouchAudio   = new Audio(OUCH_SRC);
-const planeAudio  = new Audio(PLANES_SRC);
-planeAudio.loop   = true;
+gallopAudio.loop = true;
+gallopAudio.preload = 'auto';
+
+const ouchAudio = new Audio(OUCH_SRC);
+ouchAudio.preload = 'auto';
+
+const planeAudio = new Audio(PLANES_SRC);
+planeAudio.loop = true;
+planeAudio.preload = 'auto';
+
+[gallopAudio, ouchAudio, planeAudio].forEach(a => {
+  a.playsInline = true;
+  a.setAttribute('playsinline', '');
+  a.setAttribute('webkit-playsinline', '');
+  a.crossOrigin = 'anonymous';
+});
 
 let audioUnlocked = false;
 let _audioCtx = null;
 
-function unlockAudio() {
+async function unlockAudio() {
   if (audioUnlocked) return;
-  audioUnlocked = true;
 
-  // Create/resume shared AudioContext
-  _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  try {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-  // Connect each Audio element to the AudioContext so iOS actually plays them.
-  // createMediaElementSource ties the HTMLAudioElement into the Web Audio graph.
-  [gallopAudio, planeAudio, ouchAudio].forEach(a => {
-    try {
-      const src = _audioCtx.createMediaElementSource(a);
-      src.connect(_audioCtx.destination);
-    } catch(e) {
-      // Already connected or not supported — ignore
+    if (_audioCtx.state === 'suspended') {
+      await _audioCtx.resume();
     }
-  });
 
-  if (_audioCtx.state === 'suspended') {
-    _audioCtx.resume();
+    const audios = [gallopAudio, ouchAudio, planeAudio];
+
+    for (const a of audios) {
+      try {
+        a.muted = true;
+        a.volume = 0.001;
+        a.currentTime = 0;
+
+        const p = a.play();
+
+        if (p !== undefined) {
+          await p;
+        }
+
+        a.pause();
+        a.currentTime = 0;
+        a.muted = false;
+        a.volume = 1;
+
+      } catch(e) {
+        console.log('Audio unlock failed', e);
+      }
+    }
+
+    audioUnlocked = true;
+    console.log('Audio unlocked');
+
+  } catch(err) {
+    console.log('AudioContext error', err);
   }
-
-  // Trigger a silent play so the browser registers user-gesture permission
-  [gallopAudio, planeAudio, ouchAudio].forEach(a => {
-    a.volume = 0;
-    const p = a.play();
-    if (p) p.then(() => { a.pause(); a.currentTime = 0; a.volume = 1; }).catch(() => {});
-    else { a.pause(); a.currentTime = 0; a.volume = 1; }
-  });
 }
 
 let gallopPlaying = false;
@@ -320,6 +343,14 @@ document.addEventListener('keydown', e => {
   keys[e.code] = true;
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
+document.addEventListener('visibilitychange', async () => {
+  if (_audioCtx && _audioCtx.state === 'suspended') {
+    try {
+      await _audioCtx.resume();
+    } catch(e) {}
+  }
+});
+
 
 // ── DRAW ───────────────────────────────────────────────────
 function drawFrame(fi, dx, dy) {
