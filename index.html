@@ -54,9 +54,6 @@
 <script src="images/horses.js"></script>
 <script src="images/plane.js"></script>
 <script src="images/hay.js"></script>
-<script src="sounds/gallop.js"></script>
-<script src="sounds/ouch.js"></script>
-<script src="sounds/planes.js"></script>
 <script>
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
@@ -124,6 +121,11 @@ hayImg.src   = HAY_SRC;
 planeImg.src = PLANE_SRC;
 
 // AUDIO
+
+const GALLOP_SRC = 'sounds/gallop.mp3';
+const OUCH_SRC = 'sounds/ouch.mp3';
+const PLANES_SRC = 'sounds/plane.mp3';
+
 const gallopAudio = new Audio(GALLOP_SRC);
 gallopAudio.loop = true;
 gallopAudio.preload = 'auto';
