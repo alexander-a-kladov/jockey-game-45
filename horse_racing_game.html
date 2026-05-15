@@ -54,7 +54,7 @@ const MAX_COLLISIONS  = 3;
 const FATIGUE_GAIN    = 0.0055;
 const FATIGUE_RECOVERY= 0.12;
 const SCALE           = 0.55;
-const RAW_OFFSETS = [20,16,10,8,8,12,18,22,16,8,0,12];
+const RAW_OFFSETS = [18,18,18,18,33,33,33,33,40,40,40,40];
 const GROUND_OFFSETS  = RAW_OFFSETS.map(v => v * SCALE);
 
 // ── PLANE CONFIG ────────────────────────────────────────────
@@ -474,7 +474,7 @@ function loop(ts) {
     const hDY = getFrameDrawY(frameIndex)+horseY+(standing?20:0);
     const dw=frameW*SCALE, dh=frameH*SCALE;
     const hL=280+40, hR=280+dw-40, hT=hDY+40-30, hB=hDY+dh-5;
-
+    
     for (const obs of obstacles) {
       if (obs.passed) continue;
       const wx=obs.x_m*100, sx=wx-camX;
@@ -530,9 +530,8 @@ function loop(ts) {
 
   // Horse
   const standing2=speed<1&&!isJumping;
-  const hDY2=getFrameDrawY(frameIndex)+horseY+(standing2?20:0);
+  const hDY2=getFrameDrawY(frameIndex)+horseY+(standing2?10:0);
   drawFrame(frameIndex,280,hDY2);
-
   // Stun flash
   if (stunTimer>0&&Math.floor(stunTimer*2)%2===0){
     ctx.fillStyle='rgba(255,0,0,.18)'; ctx.fillRect(0,0,W,H);

@@ -4,26 +4,22 @@
 """
 Просмотрщик фрагментов изображения с ручным выравниванием.
 
-Возможности:
-- Загружает изображение
-- Делит на N равных прямоугольников (по умолчанию 12)
-- Порядок обхода:
+Особенности:
+- Деление изображения на N частей
+- Порядок:
     справа налево, сверху вниз
-- Зацикленное переключение фрагментов
+- Зацикленное переключение
 - Предыдущий фрагмент отображается бледно
-- Отображение рамки границ изображения
-- Переключение цвета фона:
-    ↑ ↓
+- Смещение применяется КО ВСЕМ ПОСЛЕДУЮЩИМ изображениям
+- Рамка области изображения
+- Переключение фона
 
 Управление:
-    ← →      переключение фрагментов
-    W A S D  смещение текущего фрагмента
+    ← →      переключение
+    W A S D  смещение текущего и всех следующих
     ↑ ↓      смена фона
     SPACE    печать массива смещений
     ESC      выход
-
-Зависимости:
-    pip install pillow pygame
 """
 
 import math
@@ -45,7 +41,7 @@ parser.add_argument(
     "--parts",
     type=int,
     default=12,
-    help="Количество частей (по умолчанию 12)",
+    help="Количество частей",
 )
 
 args = parser.parse_args()
@@ -54,7 +50,7 @@ IMAGE_PATH = args.image
 N = args.parts
 
 # ---------------------------------------------------
-# Загрузка изображения
+# Загрузка
 # ---------------------------------------------------
 
 img = Image.open(IMAGE_PATH).convert("RGBA")
@@ -62,7 +58,7 @@ img = Image.open(IMAGE_PATH).convert("RGBA")
 img_w, img_h = img.size
 
 # ---------------------------------------------------
-# Разбиение на сетку
+# Сетка
 # ---------------------------------------------------
 
 cols = math.ceil(math.sqrt(N))
@@ -72,9 +68,6 @@ tile_w = img_w // cols
 tile_h = img_h // rows
 
 tiles = []
-
-# порядок:
-# справа налево, сверху вниз
 
 for row in range(rows):
 
@@ -92,6 +85,7 @@ for row in range(rows):
 
         row_tiles.append(crop)
 
+    # справа налево
     row_tiles.reverse()
 
     tiles.extend(row_tiles)
@@ -103,6 +97,8 @@ tiles = tiles[:N]
 # ---------------------------------------------------
 
 pygame.init()
+
+pygame.key.set_repeat(200, 25)
 
 SCREEN_W = max(t.width for t in tiles) + 400
 SCREEN_H = max(t.height for t in tiles) + 400
@@ -119,17 +115,21 @@ clock = pygame.time.Clock()
 
 def pil_to_surface(pil_img):
 
-    mode = pil_img.mode
-    size = pil_img.size
-    data = pil_img.tobytes()
-
-    return pygame.image.fromstring(data, size, mode).convert_alpha()
+    return pygame.image.fromstring(
+        pil_img.tobytes(),
+        pil_img.size,
+        pil_img.mode,
+    ).convert_alpha()
 
 
 surfaces = [pil_to_surface(t) for t in tiles]
 
 # ---------------------------------------------------
 # Смещения
+# ---------------------------------------------------
+# offsets[i] =
+# итоговое накопленное смещение
+# для i-го изображения
 # ---------------------------------------------------
 
 offsets = [[0, 0] for _ in range(len(surfaces))]
@@ -143,9 +143,9 @@ MOVE_STEP = 1
 # ---------------------------------------------------
 
 backgrounds = [
-    (30, 30, 30),       # темный
-    (180, 210, 255),    # светло-синий
-    (255, 255, 255),    # белый
+    (30, 30, 30),
+    (180, 210, 255),
+    (255, 255, 255),
 ]
 
 bg_index = 0
@@ -162,6 +162,20 @@ def make_faded(surface, alpha=90):
     return s
 
 # ---------------------------------------------------
+# Добавление смещения
+# ---------------------------------------------------
+# Смещение действует
+# на текущий и все следующие
+# ---------------------------------------------------
+
+def add_offset(dx, dy):
+
+    for i in range(current, len(offsets)):
+
+        offsets[i][0] += dx
+        offsets[i][1] += dy
+
+# ---------------------------------------------------
 # Рисование
 # ---------------------------------------------------
 
@@ -175,7 +189,7 @@ def draw():
     center_y = SCREEN_H // 2
 
     # ------------------------------------------------
-    # Рамка границ изображения
+    # Рамка
     # ------------------------------------------------
 
     frame_x = center_x - tile_w // 2
@@ -189,22 +203,25 @@ def draw():
     )
 
     # ------------------------------------------------
-    # Предыдущий тайл
+    # Предыдущий
     # ------------------------------------------------
 
     prev_index = (current - 1) % len(surfaces)
 
     prev = surfaces[prev_index]
 
-    px = center_x - prev.get_width() // 2
-    py = center_y - prev.get_height() // 2
+    # используем смещение предыдущего изображения
+    pox, poy = offsets[prev_index]
+
+    px = center_x - prev.get_width() // 2 + pox
+    py = center_y - prev.get_height() // 2 + poy
 
     faded = make_faded(prev)
 
     screen.blit(faded, (px, py))
 
     # ------------------------------------------------
-    # Текущий тайл
+    # Текущий
     # ------------------------------------------------
 
     cur = surfaces[current]
@@ -217,15 +234,19 @@ def draw():
     screen.blit(cur, (cx, cy))
 
     # ------------------------------------------------
-    # Информация
+    # Текст
     # ------------------------------------------------
 
     font = pygame.font.SysFont(None, 28)
 
+    color = (0, 0, 0) if bg_index == 2 else (255, 255, 255)
+
     txt = font.render(
-        f"{current+1}/{len(surfaces)}  offset=({ox},{oy})  bg={bg_index}",
+        f"{current+1}/{len(surfaces)}  "
+        f"offset=({ox},{oy})  "
+        f"bg={bg_index}",
         True,
-        (255, 255, 255) if bg_index != 2 else (0, 0, 0),
+        color,
     )
 
     screen.blit(txt, (20, 20))
@@ -247,21 +268,18 @@ while running:
     for event in pygame.event.get():
 
         if event.type == pygame.QUIT:
+
             running = False
 
         elif event.type == pygame.KEYDOWN:
 
             # ----------------------------------------
-            # Следующий
+            # Переключение
             # ----------------------------------------
 
             if event.key == pygame.K_RIGHT:
 
                 current = (current + 1) % len(surfaces)
-
-            # ----------------------------------------
-            # Предыдущий
-            # ----------------------------------------
 
             elif event.key == pygame.K_LEFT:
 
@@ -273,19 +291,19 @@ while running:
 
             elif event.key == pygame.K_w:
 
-                offsets[current][1] -= MOVE_STEP
+                add_offset(0, -MOVE_STEP)
 
             elif event.key == pygame.K_s:
 
-                offsets[current][1] += MOVE_STEP
+                add_offset(0, MOVE_STEP)
 
             elif event.key == pygame.K_a:
 
-                offsets[current][0] -= MOVE_STEP
+                add_offset(-MOVE_STEP, 0)
 
             elif event.key == pygame.K_d:
 
-                offsets[current][0] += MOVE_STEP
+                add_offset(MOVE_STEP, 0)
 
             # ----------------------------------------
             # Фон
