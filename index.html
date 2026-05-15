@@ -123,7 +123,7 @@ horseImg.src = HORSES_SRC;
 hayImg.src   = HAY_SRC;
 planeImg.src = PLANE_SRC;
 
-// ── AUDIO ──────────────────────────────────────────────────
+// AUDIO
 const gallopAudio = new Audio(GALLOP_SRC);
 gallopAudio.loop = true;
 gallopAudio.preload = 'auto';
@@ -143,20 +143,25 @@ planeAudio.preload = 'auto';
 });
 
 let audioUnlocked = false;
-let _audioCtx = null;
+let audioCtx = null;
+
+function safePlay(a) {
+  const p = a.play();
+  if (p && typeof p.catch === 'function') {
+    p.catch(err => console.log('play failed:', err));
+  }
+}
 
 async function unlockAudio() {
   if (audioUnlocked) return;
 
   try {
-    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-    if (_audioCtx.state === 'suspended') {
-      await _audioCtx.resume();
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume();
     }
 
     const audios = [gallopAudio, ouchAudio, planeAudio];
-
     for (const a of audios) {
       try {
         a.muted = true;
@@ -164,8 +169,7 @@ async function unlockAudio() {
         a.currentTime = 0;
 
         const p = a.play();
-
-        if (p !== undefined) {
+        if (p && typeof p.then === 'function') {
           await p;
         }
 
@@ -173,31 +177,42 @@ async function unlockAudio() {
         a.currentTime = 0;
         a.muted = false;
         a.volume = 1;
-
-      } catch(e) {
-        console.log('Audio unlock failed', e);
+      } catch (e) {
+        console.log('Audio unlock failed for one sound:', e);
       }
     }
 
     audioUnlocked = true;
     console.log('Audio unlocked');
-
-  } catch(err) {
-    console.log('AudioContext error', err);
+  } catch (err) {
+    console.log('AudioContext error:', err);
   }
 }
 
+function unlockAudioOnce() {
+  unlockAudio();
+  window.removeEventListener('pointerdown', unlockAudioOnce, true);
+  window.removeEventListener('touchstart', unlockAudioOnce, true);
+  window.removeEventListener('click', unlockAudioOnce, true);
+  window.removeEventListener('keydown', unlockAudioOnce, true);
+}
+
+window.addEventListener('pointerdown', unlockAudioOnce, true);
+window.addEventListener('touchstart', unlockAudioOnce, true);
+window.addEventListener('click', unlockAudioOnce, true);
+window.addEventListener('keydown', unlockAudioOnce, true);
+
 let gallopPlaying = false;
-let planePlaying  = false;
+let planePlaying = false;
 
 function setGallopVolume(v) {
   v = Math.max(0, Math.min(1, v));
   gallopAudio.volume = v;
+
   if (v > 0 && !gallopPlaying) {
-    gallopAudio.currentTime = 0;
-    gallopAudio.play().catch(()=>{});
+    if (audioUnlocked) safePlay(gallopAudio);
     gallopPlaying = true;
-  } else if (v === 0 && gallopPlaying) {
+  } else if (v <= 0 && gallopPlaying) {
     gallopAudio.pause();
     gallopPlaying = false;
   }
@@ -206,11 +221,11 @@ function setGallopVolume(v) {
 function setPlaneVolume(v) {
   v = Math.max(0, Math.min(1, v));
   planeAudio.volume = v;
+
   if (v > 0 && !planePlaying) {
-    planeAudio.currentTime = 0;
-    planeAudio.play().catch(()=>{});
+    if (audioUnlocked) safePlay(planeAudio);
     planePlaying = true;
-  } else if (v === 0 && planePlaying) {
+  } else if (v <= 0 && planePlaying) {
     planeAudio.pause();
     planePlaying = false;
   }
