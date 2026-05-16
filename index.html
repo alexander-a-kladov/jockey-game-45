@@ -117,147 +117,175 @@ horseImg.src = 'images/horses.png';
 hayImg.src   = 'images/haystack.png';
 planeImg.src = 'images/plane.png';
 
-// AUDIO
+// ── AUDIO (Web Audio API) ──────────────────────────────────
+// Using Web Audio API for all sounds.
+// Advantages over HTMLAudioElement:
+//   - No "unlock" play+pause trick needed per-element
+//   - Works as soon as AudioContext is resumed (one gesture)
+//   - No dependency on file being buffered at gesture time
+//   - fetch+decodeAudioData loads files independently of gestures
 
 const GALLOP_SRC = 'sounds/gallop.mp3';
-const OUCH_SRC = 'sounds/ouch.mp3';
+const OUCH_SRC   = 'sounds/ouch.mp3';
 const PLANES_SRC = 'sounds/plane.mp3';
 
-const gallopAudio = new Audio()
-gallopAudio.loop = true;
-gallopAudio.preload = 'auto';
-
-const ouchAudio = new Audio()
-ouchAudio.preload = 'auto';
-
-const planeAudio = new Audio()
-planeAudio.loop = true;
-planeAudio.preload = 'auto';
-
-gallopAudio.src = GALLOP_SRC;
-ouchAudio.src = OUCH_SRC;
-planeAudio.src = PLANES_SRC;
-
-
-[gallopAudio, ouchAudio, planeAudio].forEach(a => {
-  a.playsInline = true;
-  a.setAttribute('playsinline', '');
-  a.setAttribute('webkit-playsinline', '');
-  a.crossOrigin = 'anonymous';
-});
-
-let audioUnlocked = false;
 let audioCtx = null;
-// Set to true when user starts the game but gallop audio isn't loaded yet.
-// The canplaythrough handler will start it as soon as the file is ready.
-let gallopWanted = false;
+let audioUnlocked = false;
 
-function safePlay(a) {
-  const p = a.play();
-  if (p && typeof p.catch === 'function') {
-    p.catch(err => console.log('play failed:', err));
+// Decoded buffers (filled by fetch, independent of user gesture)
+const buffers = { gallop: null, ouch: null, plane: null };
+
+// Active looping source nodes
+let gallopNode = null, gallopGain = null;
+let planeNode  = null, planeGain  = null;
+
+// Pending gallop volume set before AudioContext was ready
+let gallopWanted   = false;
+let gallopVolTarget = 0;
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
+  return audioCtx;
 }
 
-// Must be called SYNCHRONOUSLY inside a user-gesture handler.
-// No awaits allowed before play() — mobile browsers close the gesture
-// trust window the moment execution leaves the synchronous call stack.
+// Called synchronously inside a user-gesture handler.
+// Just resumes the AudioContext — no play() needed per element.
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-
   try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
   } catch(e) {}
-
-  // Unlock one-shot sounds with silent play+pause
-  [ouchAudio, planeAudio].forEach(a => {
-    try {
-      a.muted = true;
-      a.currentTime = 0;
-      const p = a.play();
-      a.pause();
-      a.currentTime = 0;
-      a.muted = false;
-      if (p && p.catch) p.catch(() => {});
-    } catch(e) { a.muted = false; }
-  });
-
-  // Unlock gallop the same way
-  try {
-    gallopAudio.muted = true;
-    gallopAudio.currentTime = 0;
-    const p = gallopAudio.play();
-    gallopAudio.pause();
-    gallopAudio.currentTime = 0;
-    gallopAudio.muted = false;
-    if (p && p.catch) p.catch(() => {});
-  } catch(e) { gallopAudio.muted = false; }
+  // If gallop was requested before unlock, start it now
+  if (gallopWanted && gallopVolTarget > 0) {
+    _startGallopNode(gallopVolTarget);
+  }
 }
 
 function unlockAudioOnce() {
   unlockAudio();
   window.removeEventListener('pointerdown', unlockAudioOnce, true);
-  window.removeEventListener('touchstart', unlockAudioOnce, true);
-  window.removeEventListener('click', unlockAudioOnce, true);
-  window.removeEventListener('keydown', unlockAudioOnce, true);
+  window.removeEventListener('touchstart',  unlockAudioOnce, true);
+  window.removeEventListener('click',       unlockAudioOnce, true);
+  window.removeEventListener('keydown',     unlockAudioOnce, true);
+}
+window.addEventListener('pointerdown', unlockAudioOnce, true);
+window.addEventListener('touchstart',  unlockAudioOnce, true);
+window.addEventListener('click',       unlockAudioOnce, true);
+window.addEventListener('keydown',     unlockAudioOnce, true);
+
+// Fetch and decode a sound file into buffers{}
+async function loadSound(key, url) {
+  try {
+    const ctx = getAudioCtx();
+    const resp = await fetch(url);
+    const arr  = await resp.arrayBuffer();
+    buffers[key] = await ctx.decodeAudioData(arr);
+  } catch(e) {
+    console.log('loadSound failed:', key, e);
+  }
 }
 
-window.addEventListener('pointerdown', unlockAudioOnce, true);
-window.addEventListener('touchstart', unlockAudioOnce, true);
-window.addEventListener('click', unlockAudioOnce, true);
-window.addEventListener('keydown', unlockAudioOnce, true);
+// Start loading all sounds immediately (no gesture needed for fetch)
+loadSound('gallop', GALLOP_SRC);
+loadSound('ouch',   OUCH_SRC);
+loadSound('plane',  PLANES_SRC);
 
-// If the game started before gallop was loaded, start it now
-gallopAudio.addEventListener('canplaythrough', () => {
-  if (gallopWanted && !gallopPlaying) {
-    gallopPlaying = true;
-    safePlay(gallopAudio);
-  }
-}, { once: false });
+// Play a one-shot sound (ouch etc.)
+function playOneShot(key) {
+  if (!audioUnlocked || !buffers[key]) return;
+  try {
+    const ctx = getAudioCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = buffers[key];
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch(e) {}
+}
 
-let gallopPlaying = false;
-let planePlaying = false;
-
-function startGallop() {
-  gallopWanted = true;
-  if (gallopAudio.readyState >= 3) {
-    // Audio is loaded and can play — go immediately
-    if (!gallopPlaying) {
-      gallopPlaying = true;
-      gallopAudio.currentTime = 0;
-      safePlay(gallopAudio);
-    }
-  }
-  // else: canplaythrough listener will fire and start it when ready
+// Internal: create and start the gallop loop node
+function _startGallopNode(vol) {
+  if (!audioUnlocked || !buffers.gallop) return;
+  if (gallopNode) return; // already running
+  try {
+    const ctx = getAudioCtx();
+    gallopGain = ctx.createGain();
+    gallopGain.gain.setValueAtTime(vol, ctx.currentTime);
+    gallopGain.connect(ctx.destination);
+    gallopNode = ctx.createBufferSource();
+    gallopNode.buffer = buffers.gallop;
+    gallopNode.loop = true;
+    gallopNode.connect(gallopGain);
+    gallopNode.start(0);
+  } catch(e) { gallopNode = null; gallopGain = null; }
 }
 
 function setGallopVolume(v) {
   v = Math.max(0, Math.min(1, v));
-  gallopAudio.volume = v;
+  gallopVolTarget = v;
 
-  if (v > 0 && !gallopPlaying) {
-    startGallop();
-  } else if (v <= 0 && gallopPlaying) {
-    gallopAudio.pause();
-    gallopPlaying = false;
+  if (v > 0) {
+    gallopWanted = true;
+    if (!audioUnlocked) return; // unlockAudio() will start it
+    if (!buffers.gallop) return; // still loading — check below
+    if (!gallopNode) _startGallopNode(v);
+    else if (gallopGain) gallopGain.gain.setValueAtTime(v, audioCtx.currentTime);
+  } else {
     gallopWanted = false;
+    if (gallopNode) {
+      try { gallopNode.stop(); } catch(e) {}
+      gallopNode = null;
+      gallopGain = null;
+    }
   }
+}
+
+// Poll: if gallop was wanted but buffer wasn't ready yet, start it once loaded
+// (runs every frame via the game loop — negligible cost)
+function tickGallopReady() {
+  if (gallopWanted && audioUnlocked && buffers.gallop && !gallopNode) {
+    _startGallopNode(gallopVolTarget);
+  }
+}
+
+// Plane loop
+function _startPlaneNode(vol) {
+  if (!audioUnlocked || !buffers.plane) return;
+  if (planeNode) return;
+  try {
+    const ctx = getAudioCtx();
+    planeGain = ctx.createGain();
+    planeGain.gain.setValueAtTime(vol, ctx.currentTime);
+    planeGain.connect(ctx.destination);
+    planeNode = ctx.createBufferSource();
+    planeNode.buffer = buffers.plane;
+    planeNode.loop = true;
+    planeNode.connect(planeGain);
+    planeNode.start(0);
+  } catch(e) { planeNode = null; planeGain = null; }
 }
 
 function setPlaneVolume(v) {
   v = Math.max(0, Math.min(1, v));
-  planeAudio.volume = v;
-
-  if (v > 0 && !planePlaying) {
-    safePlay(planeAudio);
-    planePlaying = true;
-  } else if (v <= 0 && planePlaying) {
-    planeAudio.pause();
-    planePlaying = false;
+  if (v > 0) {
+    if (!audioUnlocked || !buffers.plane) return;
+    if (!planeNode) _startPlaneNode(v);
+    else if (planeGain) planeGain.gain.setValueAtTime(v, audioCtx.currentTime);
+  } else {
+    if (planeNode) {
+      try { planeNode.stop(); } catch(e) {}
+      planeNode = null;
+      planeGain = null;
+    }
   }
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+});
 
 // ── STATE ──────────────────────────────────────────────────
 const STATE = { INTRO:0, PLAYING:1, FINISH_WAIT:2, WIN:3, FAILED:4 };
@@ -301,13 +329,13 @@ function resetGame() {
   frameIndex=10; animTimer=0; finishTimer=0;
   collisionCount=0; stunTimer=0; fatigue=0;
   obstacles = generateObstacles();
-  gallopPlaying = false; gallopWanted = false; gallopAudio.pause();
+  setGallopVolume(0);
   setPlaneVolume(0);
+  planeNode = null; planeGain = null;
   planeActive   = false;
   planeTriggered= false;
   planeX        = W + 200;
   planeBobT     = 0;
-  planePlaying  = false;
   state = STATE.INTRO;
 }
 
@@ -347,7 +375,6 @@ function updateTouchControls(e) {
   // Start game on intro with any touch (right side OR any tap)
   if (state === STATE.INTRO && (touchControls.right || touchControls.jump || e.touches.length > 0)) {
     state = STATE.PLAYING;
-    startGallop();
   }
 
   if (
@@ -377,7 +404,6 @@ document.addEventListener('keydown', e => {
     if (e.code === 'Space') {
       if (state === STATE.INTRO) {
         state = STATE.PLAYING;
-        startGallop();
       } else if (state === STATE.PLAYING && !isJumping && speed >= MIN_JUMP_SPEED && stunTimer <= 0) {
         isJumping = true; vertVel = JUMP_FORCE;
       } else if (state === STATE.WIN || state === STATE.FAILED) {
@@ -605,6 +631,8 @@ function loop(ts) {
   const camX = horseX - 280;
 
   // ── UPDATE ──
+  tickGallopReady(); // start gallop once buffer is loaded + audio unlocked
+
   if (state === STATE.PLAYING) {
     elapsedTime += dt;
 
@@ -663,7 +691,7 @@ function loop(ts) {
       const oL=sx,oR=sx+obs.width,oT=GROUND_Y-obs.height,oB=GROUND_Y;
       if (hR>oL&&hL<oR&&hB>oT&&hT<oB) {
         obs.passed=true;
-        ouchAudio.currentTime=0; ouchAudio.play().catch(()=>{});
+        playOneShot('ouch');
         if ((horseX+dw-40)>(wx+obs.width/2)) {
           speed*=.5;
         } else {
