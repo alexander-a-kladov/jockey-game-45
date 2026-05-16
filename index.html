@@ -51,9 +51,6 @@
     <span>→</span> УСКОРЕНИЕ &nbsp;|&nbsp; <span>←</span> ТОРМОЖЕНИЕ &nbsp;|&nbsp; <span>SPACE</span> ПРЫЖОК<br><span>📱</span> МОБИЛЬНОЕ: ПРАВАЯ НИЖНЯЯ ЧАСТЬ — УСКОРЕНИЕ, ЛЕВАЯ НИЖНЯЯ — ТОРМОЖЕНИЕ, ПРАВАЯ ВЕРХНЯЯ — ПРЫЖОК
   </div>
 </div>
-<script src="images/horses.js"></script>
-<script src="images/plane.js"></script>
-<script src="images/hay.js"></script>
 <script>
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
@@ -116,9 +113,9 @@ horseImg.onload = () => {
 };
 hayImg.onload   = () => { assetsReady++; if (assetsReady===NEEDED) init(); };
 planeImg.onload = () => { assetsReady++; if (assetsReady===NEEDED) init(); };
-horseImg.src = HORSES_SRC;
-hayImg.src   = HAY_SRC;
-planeImg.src = PLANE_SRC;
+horseImg.src = 'images/horses.png';
+hayImg.src   = 'images/haystack.png';
+planeImg.src = 'images/plane.png';
 
 // AUDIO
 
@@ -126,16 +123,21 @@ const GALLOP_SRC = 'sounds/gallop.mp3';
 const OUCH_SRC = 'sounds/ouch.mp3';
 const PLANES_SRC = 'sounds/plane.mp3';
 
-const gallopAudio = new Audio(GALLOP_SRC);
+const gallopAudio = new Audio()
 gallopAudio.loop = true;
 gallopAudio.preload = 'auto';
 
-const ouchAudio = new Audio(OUCH_SRC);
+const ouchAudio = new Audio()
 ouchAudio.preload = 'auto';
 
-const planeAudio = new Audio(PLANES_SRC);
+const planeAudio = new Audio()
 planeAudio.loop = true;
 planeAudio.preload = 'auto';
+
+gallopAudio.src = GALLOP_SRC;
+ouchAudio.src = OUCH_SRC;
+planeAudio.src = PLANES_SRC;
+
 
 [gallopAudio, ouchAudio, planeAudio].forEach(a => {
   a.playsInline = true;
