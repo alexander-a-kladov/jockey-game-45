@@ -178,18 +178,25 @@ window.addEventListener('click',       unlockAudioOnce, true);
 window.addEventListener('keydown',     unlockAudioOnce, true);
 
 // Fetch and decode a sound file into buffers{}
+// Uses a temporary AudioContext just for decoding — this works without
+// a user gesture because we never call .resume() or .start() on it.
 async function loadSound(key, url) {
   try {
-    const ctx = getAudioCtx();
     const resp = await fetch(url);
     const arr  = await resp.arrayBuffer();
-    buffers[key] = await ctx.decodeAudioData(arr);
+    // Decode with a short-lived AudioContext — avoids the suspended-context
+    // deadlock that happens when decodeAudioData is called on a context that
+    // was created before a user gesture (Chrome mobile keeps it suspended
+    // and decodeAudioData never resolves until resume() is called).
+    const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+    buffers[key] = await tmpCtx.decodeAudioData(arr);
+    tmpCtx.close();
   } catch(e) {
     console.log('loadSound failed:', key, e);
   }
 }
 
-// Start loading all sounds immediately (no gesture needed for fetch)
+// Start loading all sounds immediately (no gesture needed for fetch or decode)
 loadSound('gallop', GALLOP_SRC);
 loadSound('ouch',   OUCH_SRC);
 loadSound('plane',  PLANES_SRC);
