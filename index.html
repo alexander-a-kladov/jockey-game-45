@@ -158,6 +158,7 @@ function safePlay(a) {
 
 async function unlockAudio() {
   if (audioUnlocked) return;
+  audioUnlocked = true; // set immediately so game loop can play audio right away
 
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -165,28 +166,36 @@ async function unlockAudio() {
       await audioCtx.resume();
     }
 
+    // Unlock each audio element in background (don't await sequentially)
     const audios = [gallopAudio, ouchAudio, planeAudio];
     for (const a of audios) {
       try {
         a.muted = true;
         a.volume = 0.001;
         a.currentTime = 0;
-
         const p = a.play();
         if (p && typeof p.then === 'function') {
-          await p;
+          p.then(() => {
+            a.pause();
+            a.currentTime = 0;
+            a.muted = false;
+            a.volume = 1;
+          }).catch(() => {
+            a.muted = false;
+            a.volume = 1;
+          });
+        } else {
+          a.pause();
+          a.currentTime = 0;
+          a.muted = false;
+          a.volume = 1;
         }
-
-        a.pause();
-        a.currentTime = 0;
+      } catch (e) {
         a.muted = false;
         a.volume = 1;
-      } catch (e) {
         console.log('Audio unlock failed for one sound:', e);
       }
     }
-
-    audioUnlocked = true;
     console.log('Audio unlocked');
   } catch (err) {
     console.log('AudioContext error:', err);
@@ -214,7 +223,7 @@ function setGallopVolume(v) {
   gallopAudio.volume = v;
 
   if (v > 0 && !gallopPlaying) {
-    if (audioUnlocked) safePlay(gallopAudio);
+    safePlay(gallopAudio);
     gallopPlaying = true;
   } else if (v <= 0 && gallopPlaying) {
     gallopAudio.pause();
@@ -227,7 +236,7 @@ function setPlaneVolume(v) {
   planeAudio.volume = v;
 
   if (v > 0 && !planePlaying) {
-    if (audioUnlocked) safePlay(planeAudio);
+    safePlay(planeAudio);
     planePlaying = true;
   } else if (v <= 0 && planePlaying) {
     planeAudio.pause();
@@ -363,9 +372,9 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
 document.addEventListener('visibilitychange', async () => {
-  if (_audioCtx && _audioCtx.state === 'suspended') {
+  if (audioCtx && audioCtx.state === 'suspended') {
     try {
-      await _audioCtx.resume();
+      await audioCtx.resume();
     } catch(e) {}
   }
 });
