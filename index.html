@@ -148,6 +148,9 @@ planeAudio.src = PLANES_SRC;
 
 let audioUnlocked = false;
 let audioCtx = null;
+// Set to true when user starts the game but gallop audio isn't loaded yet.
+// The canplaythrough handler will start it as soon as the file is ready.
+let gallopWanted = false;
 
 function safePlay(a) {
   const p = a.play();
@@ -156,9 +159,9 @@ function safePlay(a) {
   }
 }
 
-// Must be called SYNCHRONOUSLY inside a user-gesture handler (no awaits before it).
-// Mobile browsers only allow play() when called in the same synchronous call stack
-// as the user gesture — any await before play() breaks the gesture context.
+// Must be called SYNCHRONOUSLY inside a user-gesture handler.
+// No awaits allowed before play() — mobile browsers close the gesture
+// trust window the moment execution leaves the synchronous call stack.
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
@@ -168,7 +171,7 @@ function unlockAudio() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
   } catch(e) {}
 
-  // For one-shot sounds: play+pause to unlock them
+  // Unlock one-shot sounds with silent play+pause
   [ouchAudio, planeAudio].forEach(a => {
     try {
       a.muted = true;
@@ -181,17 +184,16 @@ function unlockAudio() {
     } catch(e) { a.muted = false; }
   });
 
-  // For gallop: start it silently (volume=0) so it's already "playing"
-  // and can be faded in immediately without any autoplay restriction.
+  // Unlock gallop the same way
   try {
-    gallopAudio.volume = 0;
-    gallopAudio.muted = false;
+    gallopAudio.muted = true;
     gallopAudio.currentTime = 0;
     const p = gallopAudio.play();
-    if (p && p.catch) p.catch(() => {});
-    // pause right away; setGallopVolume will start it when needed
     gallopAudio.pause();
-  } catch(e) {}
+    gallopAudio.currentTime = 0;
+    gallopAudio.muted = false;
+    if (p && p.catch) p.catch(() => {});
+  } catch(e) { gallopAudio.muted = false; }
 }
 
 function unlockAudioOnce() {
@@ -207,19 +209,40 @@ window.addEventListener('touchstart', unlockAudioOnce, true);
 window.addEventListener('click', unlockAudioOnce, true);
 window.addEventListener('keydown', unlockAudioOnce, true);
 
+// If the game started before gallop was loaded, start it now
+gallopAudio.addEventListener('canplaythrough', () => {
+  if (gallopWanted && !gallopPlaying) {
+    gallopPlaying = true;
+    safePlay(gallopAudio);
+  }
+}, { once: false });
+
 let gallopPlaying = false;
 let planePlaying = false;
+
+function startGallop() {
+  gallopWanted = true;
+  if (gallopAudio.readyState >= 3) {
+    // Audio is loaded and can play — go immediately
+    if (!gallopPlaying) {
+      gallopPlaying = true;
+      gallopAudio.currentTime = 0;
+      safePlay(gallopAudio);
+    }
+  }
+  // else: canplaythrough listener will fire and start it when ready
+}
 
 function setGallopVolume(v) {
   v = Math.max(0, Math.min(1, v));
   gallopAudio.volume = v;
 
   if (v > 0 && !gallopPlaying) {
-    safePlay(gallopAudio);
-    gallopPlaying = true;
+    startGallop();
   } else if (v <= 0 && gallopPlaying) {
     gallopAudio.pause();
     gallopPlaying = false;
+    gallopWanted = false;
   }
 }
 
@@ -278,7 +301,7 @@ function resetGame() {
   frameIndex=10; animTimer=0; finishTimer=0;
   collisionCount=0; stunTimer=0; fatigue=0;
   obstacles = generateObstacles();
-  gallopPlaying = false; gallopAudio.pause();
+  gallopPlaying = false; gallopWanted = false; gallopAudio.pause();
   setPlaneVolume(0);
   planeActive   = false;
   planeTriggered= false;
@@ -324,11 +347,7 @@ function updateTouchControls(e) {
   // Start game on intro with any touch (right side OR any tap)
   if (state === STATE.INTRO && (touchControls.right || touchControls.jump || e.touches.length > 0)) {
     state = STATE.PLAYING;
-    // Start gallop immediately while still inside the user-gesture call stack
-    gallopAudio.currentTime = 0;
-    gallopAudio.volume = 0.01;
-    gallopPlaying = false;
-    safePlay(gallopAudio);
+    startGallop();
   }
 
   if (
@@ -358,10 +377,7 @@ document.addEventListener('keydown', e => {
     if (e.code === 'Space') {
       if (state === STATE.INTRO) {
         state = STATE.PLAYING;
-        gallopAudio.currentTime = 0;
-        gallopAudio.volume = 0.01;
-        gallopPlaying = false;
-        safePlay(gallopAudio);
+        startGallop();
       } else if (state === STATE.PLAYING && !isJumping && speed >= MIN_JUMP_SPEED && stunTimer <= 0) {
         isJumping = true; vertVel = JUMP_FORCE;
       } else if (state === STATE.WIN || state === STATE.FAILED) {
