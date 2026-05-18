@@ -1,0 +1,20 @@
+[
+{"date": "05-17", "name": "Ирина", "gender":"women"},
+{"date": "07-17", "name": "Кирилл", "gender":"men"},
+{"date": "08-05", "name": "Варя", "gender":"women"},
+{"date": "09-05", "name": "Павел", "gender":"men"},
+{"date": "09-06", "name": "Максим", "gender":"men"},
+{"date": "10-21", "name": "Люция", "gender":"women"},
+{"date": "11-12", "name": "Анна", "gender":"women"},
+{"date": "12-24", "name": "Александр", "gender":"men"},
+{"date": "12-31", "name": "Юрий", "gender": "men"},
+{"date": "01-12", "name": "Алексей", "gender": "men"},
+{"date": "01-17", "name": "Виктор", "gender": "men"},
+{"date": "01-28", "name": "Галина", "gender": "women"},
+{"date": "02-16", "name": "Лена", "gender": "women"},
+{"date": "03-06", "name": "Александр", "gender": "men"},
+{"date": "03-07", "name": "Оксана", "gender": "women"},
+{"date": "04-05", "name": "Фирая", "gender": "women"},
+{"date": "04-24", "name": "Александр", "gender": "men"},
+{"date": "05-06", "name": "Алексей", "gender": "men"}
+]
