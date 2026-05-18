@@ -93,14 +93,17 @@ const BANNER_FONT        = 'bold 23px Libre Baskerville';
 const BANNER_TEXT_DEFAULT = '🎉 Эта игра сделана Александром с помощью ИИ 🤖🇷🇺';
 
 // ── DYNAMIC BANNER ─────────────────────────────────────────
-// Holds the ordered list of greetings for today (built at load time)
-let bannerMessages   = [];   // array of strings to cycle through
-let bannerMsgIndex   = 0;    // which one shows on the NEXT game start
+// Birthdays and holidays stored separately so birthday templates
+// are re-rolled randomly on every game start.
+let todayBirthdays   = [];   // [{name, gender}] for today
+let birthdayTemplates = {};  // {women:[...], men:[...]} from JSON
+let todayHolidays    = [];   // [string] holiday texts for today
+let birthdayIndex    = 0;    // global position cycling through [birthdays..., holidays...]
 let currentBannerText = BANNER_TEXT_DEFAULT;
 
 // Utility: today as "MM-DD"
 function todayMMDD() {
-  const d = new Date('2025-12-31');
+  const d = new Date();
   const mm = String(d.getMonth()+1).padStart(2,'0');
   const dd = String(d.getDate()).padStart(2,'0');
   return `${mm}-${dd}`;
@@ -111,7 +114,7 @@ function rndItem(arr) {
   return arr[Math.floor(Math.random()*arr.length)];
 }
 
-// Load all three JSON files, build bannerMessages[]
+// Load all three JSON files
 async function loadBannerData() {
   try {
     const [birthdaysRaw, greetingsRaw, holidaysRaw] = await Promise.all([
@@ -121,45 +124,54 @@ async function loadBannerData() {
     ]);
 
     const today = todayMMDD();
-    const messages = [];
 
-    // 1. Birthday greetings (each person → random template with their name)
-    const todayBirthdays = birthdaysRaw.filter(b => b.date === today);
-    for (const person of todayBirthdays) {
-      const templates = greetingsRaw[person.gender] || greetingsRaw['men'];
-      const tpl = rndItem(templates);
-      messages.push(tpl.replace('{name}', person.name));
-    }
+    // 1. Birthdays for today
+    todayBirthdays  = birthdaysRaw.filter(b => b.date === today);
+    birthdayTemplates = greetingsRaw;
 
-    // 2. Holiday greetings
-    const todayHolidays = holidaysRaw.filter(h => h.date === today);
-    for (const holiday of todayHolidays) {
-      messages.push(holiday.name);
-    }
+    // 2. Holidays for today
+    todayHolidays = holidaysRaw
+      .filter(h => h.date === today)
+      .map(h => h.name);
 
-    if (messages.length > 0) {
-      bannerMessages = messages;
-    } else {
-      bannerMessages = [BANNER_TEXT_DEFAULT];
-    }
+    birthdayIndex = 0;
 
-    // Set initial text and remeasure
-    currentBannerText = bannerMessages[0];
-    bannerMsgIndex = 1 % bannerMessages.length;
+    // Set initial text WITHOUT advancing the index
+    currentBannerText = buildNextBannerText();
+    // Reset index back to 0 so first resetGame() call starts from position 0 again
+    birthdayIndex = 0;
     measureBanner();
   } catch(e) {
     console.log('Banner data load failed:', e);
-    bannerMessages = [BANNER_TEXT_DEFAULT];
     currentBannerText = BANNER_TEXT_DEFAULT;
     measureBanner();
   }
 }
 
+// Build the next banner text and advance the global index.
+// Order: [birthday0, birthday1, ..., holiday0, holiday1, ...] cycling.
+// Birthday templates are re-rolled randomly on every call.
+function buildNextBannerText() {
+  const totalBirthdays = todayBirthdays.length;
+  const totalHolidays  = todayHolidays.length;
+  const total = totalBirthdays + totalHolidays;
+  if (total === 0) return BANNER_TEXT_DEFAULT;
+
+  const pos = birthdayIndex % total;
+  birthdayIndex = (birthdayIndex + 1) % total;
+
+  if (pos < totalBirthdays) {
+    const person    = todayBirthdays[pos];
+    const templates = birthdayTemplates[person.gender] || birthdayTemplates['men'];
+    return rndItem(templates).replace('{name}', person.name);
+  } else {
+    return todayHolidays[pos - totalBirthdays];
+  }
+}
+
 // Call this at each game start to advance to the next message
 function advanceBannerMessage() {
-  if (bannerMessages.length === 0) return;
-  currentBannerText = bannerMessages[bannerMsgIndex];
-  bannerMsgIndex = (bannerMsgIndex + 1) % bannerMessages.length;
+  currentBannerText = buildNextBannerText();
   measureBanner();
 }
 
